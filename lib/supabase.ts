@@ -90,7 +90,7 @@ export const userService = {
             .single()
     },
 
-    updateUserProfile: async (userId: string, updates: any) => {
+    updateUserProfile: async (userId: string, updates: Record<string, unknown>) => {
         return await supabase
             .from('user_profiles')
             .update(updates)
@@ -132,7 +132,7 @@ export const subscriptionService = {
         ])
     },
 
-    updateSubscription: async (userId: string, updates: any) => {
+    updateSubscription: async (userId: string, updates: Record<string, unknown>) => {
         return await supabase
             .from('subscriptions')
             .update(updates)

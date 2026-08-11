@@ -7,45 +7,21 @@ const razorpay = new Razorpay({
     key_secret: process.env.RAZORPAY_KEY_SECRET!,
 })
 
-// Pricing plans
-export const PRICING_PLANS = {
-    free: {
-        name: 'Free',
-        price: 0,
-        features: [
-            'Generate up to 5 research reports per month',
-            'Basic sources and insights',
-            'Standard processing time',
-            'Limited to 5,000 words per report',
-        ],
-    },
-    pro: {
-        name: 'Pro',
-        price: 49900, // ₹499 in paise
-        displayPrice: 499,
-        features: [
-            'Unlimited research reports',
-            'Advanced sources and deep insights',
-            'Priority processing (2x faster)',
-            'Up to 50,000 words per report',
-            'API access (1,000 requests/month)',
-            'Custom branding',
-        ],
-    },
-    team: {
-        name: 'Team',
-        price: 149900, // ₹1499 in paise
-        displayPrice: 1499,
-        features: [
-            'Everything in Pro',
-            'Team collaboration (up to 5 users)',
-            'Advanced analytics dashboard',
-            'API access (10,000 requests/month)',
-            'Dedicated support',
-            'Custom integrations',
-        ],
-    },
-}
+import { PLANS } from '@/features/billing/services/plans'
+
+// Export for backward compatibility
+export const PRICING_PLANS = Object.entries(PLANS).reduce(
+    (acc, [key, plan]) => ({
+        ...acc,
+        [key]: {
+            name: plan.name,
+            price: plan.priceInPaise,
+            displayPrice: plan.displayPrice,
+            features: plan.features,
+        },
+    }),
+    {} as Record<string, any>
+)
 
 export const razorpayService = {
     /**
@@ -59,10 +35,12 @@ export const razorpayService = {
         email: string
     ) => {
         try {
+            // Generate short receipt ID (max 40 chars)
+            const shortId = userId.substring(0, 8) + Date.now().toString().slice(-8)
             const order = await razorpay.orders.create({
                 amount, // Amount in paise
                 currency: 'INR',
-                receipt: `order_${userId}_${Date.now()}`,
+                receipt: shortId,
                 notes: {
                     userId,
                     planName,
@@ -71,7 +49,18 @@ export const razorpayService = {
             })
             return order
         } catch (error) {
-            console.error('Error creating Razorpay order:', error)
+            // Razorpay SDK throws plain objects (statusCode + error), not Error instances.
+            // Always log the full detail so the real cause is visible.
+            const err = error as { statusCode?: number; error?: { code?: string; description?: string }; message?: string }
+            console.error(
+                '[Razorpay] Error creating order:',
+                JSON.stringify({
+                    statusCode: err.statusCode,
+                    code: err.error?.code,
+                    description: err.error?.description,
+                    message: err.message,
+                })
+            )
             throw error
         }
     },
@@ -137,6 +126,20 @@ export const razorpayService = {
             return order
         } catch (error) {
             console.error('Error fetching order details:', error)
+            throw error
+        }
+    },
+
+    /**
+     * Cancel a subscription
+     * Razorpay: Cancels a subscription. The subscription is cancelled at the end of the current billing cycle.
+     */
+    cancelSubscription: async (subscriptionId: string) => {
+        try {
+            const subscription = await razorpay.subscriptions.cancel(subscriptionId)
+            return subscription
+        } catch (error) {
+            console.error('Error cancelling subscription:', error)
             throw error
         }
     },

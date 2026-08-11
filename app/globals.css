@@ -1,6 +1,4 @@
 @import 'tailwindcss';
-@import 'tw-animate-css';
-@import 'shadcn/tailwind.css';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -180,16 +178,17 @@
     background-clip: text;
   }
   
-  /* Subtle hover lift effect */
-  .hover-lift {
-    @apply transition-transform duration-300 hover:scale-[1.02];
-  }
-  
   /* Glass effect utility */
   .glass {
     background: rgba(11, 11, 11, 0.4);
     backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+  
+  /* Subtle hover lift effect */
+  .hover-lift {
+    @apply transition-transform duration-300 hover:scale-[1.02];
   }
   
   /* Text glow effect */
@@ -200,5 +199,18 @@
   /* Selection styling */
   ::selection {
     @apply bg-primary/30 text-foreground;
+  }
+  
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-background;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-primary/30 rounded-full hover:bg-primary/50;
   }
 }
