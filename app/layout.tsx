@@ -2,7 +2,12 @@ import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { Inter, Instrument_Serif } from 'next/font/google'
 import { AuthProvider } from '@/features/auth/contexts/auth-context'
+import { ErrorBoundary } from '@/app/_components/error-boundary'
+import { initSentry } from '@/lib/sentry'
 import './globals.css'
+
+// Initialize Sentry error tracking (fire-and-forget; runs only when SDK + DSN present)
+void initSentry()
 
 const inter = Inter({ variable: '--font-sans', subsets: ['latin'] })
 const instrumentSerif = Instrument_Serif({
@@ -51,7 +56,9 @@ export default function RootLayout({
     <html lang="en" className={`${inter.variable} ${instrumentSerif.variable} bg-background`} data-scroll-behavior="smooth">
       <body className="font-sans antialiased text-foreground">
         <AuthProvider>
-          {children}
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
         </AuthProvider>
         {process.env.NODE_ENV === 'production' && <Analytics />}
       </body>

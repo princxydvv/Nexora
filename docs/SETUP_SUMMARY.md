@@ -114,14 +114,14 @@ pnpm dev
 
 ### Razorpay Test Credentials
 ```
-Key ID: rzp_test_T5OQQa9EHRrrlK
-Secret: SAVJWUn0mntqZCceWapIFWFs
+Key ID: <your-rzp_test_key>
+Secret: <your-razorpay-secret>   <!-- NEVER commit real keys -->
 ```
 
 ### Supabase Project
 ```
-URL: https://rpokghmtkhzfweqdfdoa.supabase.co
-Anon Key: sb_publishable_rE0MV-ssJ_Xaylc95sDd4A_eWiuoy4T
+URL: <your-project>.supabase.co
+Anon Key: <your-anon-key>   <!-- NEVER commit the service_role key -->
 ```
 
 ### Pricing Plans

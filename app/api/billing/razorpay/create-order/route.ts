@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { PLANS } from '@/features/billing/services/plans'
-import { paymentService, subscriptionService } from '@/lib/supabase'
 import { razorpayService } from '@/lib/razorpay'
+import { rateLimitGuard } from '@/lib/middleware/rate-limit-guard'
+import { createServiceClient } from '@/lib/supabase-service'
+import { subscriptionService, paymentService } from '@/lib/supabase'
 
 function createSupabaseRouteClient(request: NextRequest, response: NextResponse) {
     return createServerClient(
@@ -28,6 +30,22 @@ function createSupabaseRouteClient(request: NextRequest, response: NextResponse)
  * Create a new Razorpay order for payment
  */
 export async function POST(request: NextRequest) {
+    // Apply rate limiting for payment endpoints
+    const rateLimit = await rateLimitGuard('payment')(request)
+    
+    if (!rateLimit.allowed) {
+        return NextResponse.json(
+            { error: 'Too many requests', message: 'Please wait before retrying' },
+            { 
+                status: 429,
+                headers: {
+                    ...rateLimit.headers,
+                    'Retry-After': rateLimit.retryAfter.toString(),
+                }
+            }
+        )
+    }
+
     try {
         const response = NextResponse.next()
         const supabase = createSupabaseRouteClient(request, response)

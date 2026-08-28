@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteSupabaseClient } from '@/lib/supabase-route-client'
+import { createServiceClient } from '@/lib/supabase-service'
+import { PLANS, getPlan, type PlanId } from '@/features/billing/services/plans'
+import { checkResearchGate } from '@/features/billing/services/gate'
 import type { ResearchReportJson, ResearchSource } from '@/features/research/types/research'
 
 type ReportRow = {
@@ -178,6 +181,98 @@ function generatePlainText(report: ResearchReportJson, title: string, query: str
     return text
 }
 
+/**
+ * Checks whether a user's plan allows downloading a specific format.
+ * Uses the service client to read the REAL plan from the database —
+ * never trusts client-side state, localStorage, or query parameters.
+ */
+async function checkDownloadPermission(userId: string, format: 'markdown' | 'text'): Promise<{ allowed: boolean; plan: PlanId; reportsUsed?: number | undefined; reportsLimit?: number | undefined; reason?: string | undefined; statusCode?: number | undefined }> {
+    const db = createServiceClient()
+
+    // 1. Get the user's REAL subscription plan from user_profiles table
+    const { data: profile, error: profileError } = await db
+        .from('user_profiles')
+        .select('subscription_plan')
+        .eq('id', userId)
+        .single()
+
+    if (profileError || !profile) {
+        return { allowed: false, plan: 'free', reason: 'User profile not found' }
+    }
+
+    const plan: PlanId = (profile.subscription_plan ?? 'free') as PlanId
+
+    // 2. For paid plans, verify subscription is actually active.
+    // This prevents stale premium access after cancellation/expiry/halt.
+    if (plan !== 'free') {
+        const { data: sub, error: subError } = await db
+            .from('subscriptions')
+            .select('status, current_period_end')
+            .eq('user_id', userId)
+            .maybeSingle()
+
+        if (subError || !sub || sub.status !== 'active') {
+            // Subscription not active — downgrade to free and deny premium access
+            await db
+                .from('user_profiles')
+                .update({
+                    subscription_plan: 'free',
+                    reports_limit: 5,
+                    credits_remaining: 5,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', userId)
+
+            return { allowed: false, plan: 'free', reason: 'Your subscription is no longer active. Please renew to continue using premium features.', statusCode: 403 }
+        }
+
+        // Check period end not expired
+        if (sub.current_period_end && new Date(sub.current_period_end) <= new Date()) {
+            await db
+                .from('user_profiles')
+                .update({
+                    subscription_plan: 'free',
+                    reports_limit: 5,
+                    credits_remaining: 5,
+                    updated_at: new Date().toISOString(),
+                })
+                .eq('id', userId)
+
+            return { allowed: false, plan: 'free', reason: 'Your subscription has expired. Please renew to continue using premium features.', statusCode: 403 }
+        }
+    }
+
+    // 3. Check report limit using the gate function
+    // (this also auto-resets monthly usage if needed)
+    const gate = await checkResearchGate(userId, 'basic') // basic depth check just for report limit
+
+    if (!gate.allowed) {
+        return { allowed: false, plan: gate.plan ?? 'free', reportsUsed: gate.reportsUsed, reportsLimit: gate.reportsLimit, reason: gate.reason, statusCode: gate.statusCode ?? 403 }
+    }
+
+    // 4. Check format permission per plan config
+    const planConfig = getPlan(plan)
+    const canDownloadMarkdown = planConfig.canDownloadMarkdown
+    const canDownloadText = planConfig.canDownloadText
+
+    let allowed = false
+    let reason = ''
+
+    if (format === 'markdown' && canDownloadMarkdown) {
+        allowed = true
+    } else if (format === 'text' && canDownloadText) {
+        allowed = true
+    } else if (format === 'markdown' && !canDownloadMarkdown) {
+        reason = `Markdown downloads are available for Pro and Team plans only. You are on the ${plan} plan.`
+    } else if (format === 'text' && !canDownloadText) {
+        reason = `Text downloads are not available for your current plan.`
+    } else {
+        reason = 'Download format not permitted for your plan.'
+    }
+
+    return { allowed, plan, reportsUsed: gate.reportsUsed, reportsLimit: gate.reportsLimit, reason, statusCode: undefined }
+}
+
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
     const supabase = createRouteSupabaseClient(request)
     const {
@@ -205,6 +300,18 @@ export async function GET(request: NextRequest, context: { params: Promise<{ id:
 
     if (!data) {
         return NextResponse.json({ error: 'Report not found' }, { status: 404 })
+    }
+
+    // 2. Check download permissions server-side.
+    // This prevents free users from bypassing the UI and calling the API directly
+    // for paid-only download formats (markdown).
+    const permission = await checkDownloadPermission(user.id, format as 'markdown' | 'text')
+
+    if (!permission.allowed) {
+        return NextResponse.json(
+            { error: permission.reason || 'Download not permitted for your plan.' },
+            { status: permission.statusCode ?? 403 }
+        )
     }
 
     const row = data as ReportRow

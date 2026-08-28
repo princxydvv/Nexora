@@ -3,8 +3,25 @@ import { createRouteSupabaseClient } from '@/lib/supabase-route-client'
 import { createServiceClient } from '@/lib/supabase-service'
 import { razorpayService } from '@/lib/razorpay'
 import { getPlan } from '@/features/billing/services/plans'
+import { rateLimitGuard } from '@/lib/middleware/rate-limit-guard'
 
 export async function POST(request: NextRequest) {
+    // Apply rate limiting for payment verification
+    const rateLimit = await rateLimitGuard('payment')(request)
+    
+    if (!rateLimit.allowed) {
+        return NextResponse.json(
+            { success: false, error: 'Too many requests', message: 'Please wait before retrying' },
+            { 
+                status: 429,
+                headers: {
+                    ...rateLimit.headers,
+                    'Retry-After': rateLimit.retryAfter.toString(),
+                }
+            }
+        )
+    }
+
     // 1. Authenticate user
     const supabase = createRouteSupabaseClient(request)
     const { data: { user }, error: authError } = await supabase.auth.getUser()

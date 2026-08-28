@@ -2,8 +2,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createRouteSupabaseClient } from '@/lib/supabase-route-client'
 import { createServiceClient } from '@/lib/supabase-service'
 import { getPlan } from '@/features/billing/services/plans'
+import { rateLimitGuard } from '@/lib/middleware/rate-limit-guard'
 
 export async function GET(request: NextRequest) {
+    // Apply moderate rate limiting for billing data
+    const rateLimit = await rateLimitGuard('general')(request)
+    
+    if (!rateLimit.allowed) {
+        return NextResponse.json(
+            { error: 'Too many requests', message: 'Please wait before retrying' },
+            { 
+                status: 429,
+                headers: {
+                    ...rateLimit.headers,
+                    'Retry-After': rateLimit.retryAfter.toString(),
+                }
+            }
+        )
+    }
+
     const supabase = createRouteSupabaseClient(request)
     const { data: { user }, error: authError } = await supabase.auth.getUser()
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import crypto from 'crypto'
 import { createServiceClient } from '@/lib/supabase-service'
 import { getPlan, isValidPlan, type PlanId } from '@/features/billing/services/plans'
+import { rateLimitGuard } from '@/lib/middleware/rate-limit-guard'
 
 const LOG_PREFIX = '[Razorpay Webhook]'
 
@@ -831,6 +832,22 @@ async function activateUserSubscription(
 // ═══════════════════════════════════════════════════════════════════════════
 
 export async function POST(request: NextRequest) {
+    // Apply rate limiting for webhook endpoints
+    const rateLimit = await rateLimitGuard('general')(request)
+    
+    if (!rateLimit.allowed) {
+        log('Rate limit exceeded for webhook')
+        return NextResponse.json(
+            { error: 'Too many requests' },
+            { 
+                status: 429,
+                headers: {
+                    'Retry-After': rateLimit.retryAfter.toString(),
+                }
+            }
+        )
+    }
+
     // 1. Check webhook secret is configured
     const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET
     if (!webhookSecret) {

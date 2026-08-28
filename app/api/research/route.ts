@@ -3,6 +3,7 @@ import { createRouteSupabaseClient } from '@/lib/supabase-route-client'
 import { executeResearch, type ResearchInput } from '@/features/research/services/research-service'
 import { ResearchError, isResearchError } from '@/features/research/lib/errors'
 import { checkResearchGate, incrementReportUsage } from '@/features/billing/services/gate'
+import { rateLimitGuard } from '@/lib/middleware/rate-limit-guard'
 import type {
     ResearchReportJson,
     ResearchReportRecord,
@@ -145,6 +146,22 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+    // Apply rate limiting for research generation (expensive operation)
+    const rateLimit = await rateLimitGuard('research')(request)
+    
+    if (!rateLimit.allowed) {
+        return NextResponse.json(
+            { error: 'Too many requests', message: 'Please wait before generating another report' },
+            { 
+                status: 429,
+                headers: {
+                    ...rateLimit.headers,
+                    'Retry-After': rateLimit.retryAfter.toString(),
+                }
+            }
+        )
+    }
+
     const supabase = createRouteSupabaseClient(request)
     const {
         data: { user },

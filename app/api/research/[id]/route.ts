@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createRouteSupabaseClient } from '@/lib/supabase-route-client'
 import { ResearchError } from '@/features/research/lib/errors'
+import { rateLimitGuard } from '@/lib/middleware/rate-limit-guard'
 import type { ResearchReportJson, ResearchSource } from '@/features/research/types/research'
 
 type ReportRow = {
@@ -58,6 +59,22 @@ function normalizeSources(value: unknown): ResearchSource[] {
 }
 
 export async function GET(request: NextRequest, context: { params: Promise<{ id: string }> }) {
+    // Apply rate limiting for read operations
+    const rateLimit = await rateLimitGuard('read')(request)
+    
+    if (!rateLimit.allowed) {
+        return NextResponse.json(
+            { error: 'Too many requests', message: 'Please wait before retrying' },
+            { 
+                status: 429,
+                headers: {
+                    ...rateLimit.headers,
+                    'Retry-After': rateLimit.retryAfter.toString(),
+                }
+            }
+        )
+    }
+
     const supabase = createRouteSupabaseClient(request)
     const {
         data: { user },
