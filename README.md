@@ -100,12 +100,9 @@ All documentation has been moved to the `docs/` folder. See [docs/README.md](./d
 - Rate Limiting
 - Database Indexing
 
-## License
-
-This project is private and confidential.
 
 ---
 
 **Status**: Production Ready  
 **Version**: 1.0.0  
-**Last Updated**: 2026-08-12
+
